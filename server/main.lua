@@ -1,0 +1,9 @@
+local ESX=exports.es_extended:getSharedObject()
+local queues={solo={},duo={},squad={}}
+local function key(src) local x=ESX.GetPlayerFromId(src); return x and x.identifier end
+local function load(src) local k=key(src); local r=MySQL.single.await('SELECT * FROM ab_characters WHERE char_identifier=?',{k}); if not r then MySQL.insert.await('INSERT INTO ab_characters(char_identifier,inventory,stash) VALUES(?,?,?)',{k,'[]','[]'}); return {items={},stash={},level=1,xp=0} end; return {items=json.decode(r.inventory or '[]') or {},stash=json.decode(r.stash or '[]') or {},level=r.level,xp=r.xp} end
+local function save(src,d) MySQL.update.await('UPDATE ab_characters SET inventory=?,stash=?,level=?,xp=? WHERE char_identifier=?',{json.encode(d.items),json.encode(d.stash),d.level,d.xp,key(src)}) end
+ESX.RegisterServerCallback('ab:getData',function(src,cb) cb(load(src)) end)
+RegisterNetEvent('ab:drop',function(index,count) local src=source; local d=load(src); local i=d.items[index]; count=math.floor(tonumber(count) or 1); if not i or count<1 or count>i.count then return end; i.count=i.count-count; if i.count==0 then table.remove(d.items,index) end; save(src,d); TriggerClientEvent('ab:refresh',src,d) end)
+RegisterNetEvent('ab:queue',function(mode) local src=source; local need=Config.Modes[mode]; if not need then return end; for _,q in pairs(queues) do for i=#q,1,-1 do if q[i]==src then table.remove(q,i) end end end; queues[mode][#queues[mode]+1]=src; if #queues[mode]>=need then local bucket=math.random(1000,9999); for i=1,need do local p=table.remove(queues[mode],1); SetPlayerRoutingBucket(p,bucket); TriggerClientEvent('ab:round',p,Config.Extraction) end end end)
+RegisterNetEvent('ab:extract',function() local src=source; local d=load(src); d.xp=d.xp+100; if d.xp>=d.level*500 then d.xp=0; d.level=d.level+1 end; save(src,d); SetPlayerRoutingBucket(src,0); TriggerClientEvent('ab:returned',src,d) end)
